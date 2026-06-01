@@ -1,0 +1,323 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║          QA Smart Agent v1 — Installation Guide             ║
+# ║     Works on Windows · macOS · Linux                        ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+
+# ─────────────────────────────────────────────────────────────
+# STEP 1 — CHECK PYTHON VERSION (3.10+ required)
+# ─────────────────────────────────────────────────────────────
+
+# Windows / macOS / Linux — run in terminal:
+python --version
+# or
+python3 --version
+
+# Expected output: Python 3.10.x or higher
+
+# If Python not installed:
+#   Windows  → https://www.python.org/downloads/windows/
+#   macOS    → https://www.python.org/downloads/macos/
+#              OR: brew install python
+#   Linux    → sudo apt install python3 python3-pip    (Ubuntu/Debian)
+#              sudo yum install python3                (CentOS/RHEL)
+
+
+# ─────────────────────────────────────────────────────────────
+# STEP 2 — CHECK NODE.JS (required for .docx generation)
+# ─────────────────────────────────────────────────────────────
+
+node --version    # expected: v18.x or higher
+npm --version     # expected: 9.x or higher
+
+# If Node.js not installed:
+#   All platforms → https://nodejs.org/en/download
+#   macOS         → brew install node
+#   Linux         → sudo apt install nodejs npm
+
+
+# ─────────────────────────────────────────────────────────────
+# STEP 3 — CLONE / COPY PROJECT FILES
+# ─────────────────────────────────────────────────────────────
+
+# Place these files in your project folder:
+#   qa_smart_agentv1.py
+#   requirements.txt
+#   INSTALL.txt  (this file)
+
+# Example folder structure:
+#   /your-project/
+#     ├── qa_smart_agentv1.py
+#     ├── requirements.txt
+#     └── INSTALL.txt
+
+
+# ─────────────────────────────────────────────────────────────
+# STEP 4 — CREATE VIRTUAL ENVIRONMENT (recommended)
+# ─────────────────────────────────────────────────────────────
+
+# Windows (Command Prompt or PowerShell):
+python -m venv .venv
+.venv\Scripts\activate
+
+# macOS / Linux:
+python3 -m venv .venv
+source .venv/bin/activate
+
+# You should see (.venv) at the start of your terminal prompt
+
+
+# ─────────────────────────────────────────────────────────────
+# STEP 5 — INSTALL PYTHON DEPENDENCIES
+# ─────────────────────────────────────────────────────────────
+
+# All platforms (run inside activated virtual environment):
+pip install -r requirements.txt
+
+# Verify installation:
+pip list | grep -E "openai|anthropic|requests|Pillow"
+
+# Expected output:
+#   anthropic    0.25.x
+#   openai       1.30.x
+#   Pillow       10.x.x
+#   requests     2.31.x
+
+
+# ─────────────────────────────────────────────────────────────
+# STEP 6 — INSTALL NODE.JS DOCX PACKAGE
+# ─────────────────────────────────────────────────────────────
+
+# Run inside your project folder:
+npm install docx
+
+# This creates a node_modules/ folder in your project directory
+# Verify:
+node -e "require('docx'); console.log('docx OK')"
+
+
+# ─────────────────────────────────────────────────────────────
+# STEP 7 — SET ENVIRONMENT VARIABLES
+# ─────────────────────────────────────────────────────────────
+
+# ── macOS / Linux — add to ~/.zshrc or ~/.bashrc ──
+export FIGMA_TOKEN="figd_xxxxxxxxxxxxxxxxxxxx"
+export OPENAI_API_KEY="sk-proj-xxxxxxxxxxxxxxxxxxxx"
+export ANTHROPIC_API_KEY="sk-ant-xxxxxxxxxxxxxxxxxxxx"
+export JIRA_BASE_URL="https://yourcompany.atlassian.net"
+export JIRA_EMAIL="you@yourcompany.com"
+export JIRA_API_TOKEN="your_jira_api_token"
+
+# After editing ~/.zshrc or ~/.bashrc, reload it:
+source ~/.zshrc
+# or
+source ~/.bashrc
+
+# ── Windows — Command Prompt ──
+set FIGMA_TOKEN=figd_xxxxxxxxxxxxxxxxxxxx
+set OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxx
+set ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxx
+set JIRA_BASE_URL=https://yourcompany.atlassian.net
+set JIRA_EMAIL=you@yourcompany.com
+set JIRA_API_TOKEN=your_jira_api_token
+
+# ── Windows — PowerShell ──
+$env:FIGMA_TOKEN="figd_xxxxxxxxxxxxxxxxxxxx"
+$env:OPENAI_API_KEY="sk-proj-xxxxxxxxxxxxxxxxxxxx"
+$env:ANTHROPIC_API_KEY="sk-ant-xxxxxxxxxxxxxxxxxxxx"
+$env:JIRA_BASE_URL="https://yourcompany.atlassian.net"
+$env:JIRA_EMAIL="you@yourcompany.com"
+$env:JIRA_API_TOKEN="your_jira_api_token"
+
+# ── Windows — Permanent (System Environment Variables) ──
+# 1. Search "Environment Variables" in Windows Start menu
+# 2. Click "Edit the system environment variables"
+# 3. Click "Environment Variables" button
+# 4. Under "User variables" click New and add each key/value
+
+
+# ─────────────────────────────────────────────────────────────
+# WHERE TO GET API KEYS
+# ─────────────────────────────────────────────────────────────
+
+# FIGMA_TOKEN
+#   → figma.com → Profile avatar → Settings → Security
+#   → Personal access tokens → Generate new token
+
+# OPENAI_API_KEY
+#   → platform.openai.com/api-keys
+#   → Create new secret key
+
+# ANTHROPIC_API_KEY
+#   → console.anthropic.com/settings/keys
+#   → Create key
+
+# JIRA_API_TOKEN
+#   → id.atlassian.com/manage-profile/security/api-tokens
+#   → Create API token
+#   Note: Use your Atlassian account email as JIRA_EMAIL
+
+# JIRA_BASE_URL
+#   → Your Jira Cloud URL e.g. https://mycompany.atlassian.net
+#   → Do NOT include trailing slash
+
+
+# ─────────────────────────────────────────────────────────────
+# STEP 8 — VERIFY INSTALLATION
+# ─────────────────────────────────────────────────────────────
+
+python qa_smart_agentv1.py --help
+
+# Expected output:
+#   usage: qa_smart_agentv1.py [-h] [--figma-url] [--frame-ids]
+#                               [--jira-ticket] [--story] [--business]
+#                               [--model] [--output] [--delay]
+
+
+# ─────────────────────────────────────────────────────────────
+# USAGE EXAMPLES — ALL COMBINATIONS
+# ─────────────────────────────────────────────────────────────
+
+# ── 1. Jira ticket only (fetches story in real time) ──
+python qa_smart_agentv1.py \
+  --jira-ticket PROJ-123 \
+  --output my_test_cases
+
+# ── 2. Plain pasted story only ──
+python qa_smart_agentv1.py \
+  --story "As a user I want to login via SSO.
+  AC:
+  - Valid credentials redirect to dashboard
+  - Invalid credentials show error message
+  - Empty fields show validation errors" \
+  --output login_tests
+
+# ── 3. Figma only ──
+python qa_smart_agentv1.py \
+  --figma-url "https://www.figma.com/design/FILE_KEY/Name?node-id=1318-1991" \
+  --frame-ids "1318:1991" "1330:17483" \
+  --output figma_tests
+
+# ── 4. Business context only ──
+python qa_smart_agentv1.py \
+  --business "B2B e-commerce cart. Users add items by SKU.
+              Quantity min 1 max 1000. Invalid SKU shows error." \
+  --output business_tests
+
+# ── 5. Jira + Figma (recommended) ──
+python qa_smart_agentv1.py \
+  --jira-ticket PROJ-123 \
+  --figma-url "https://www.figma.com/design/FILE_KEY/Name?node-id=1318-1991" \
+  --frame-ids "1318:1991" "1330:17483" "1330:21740" \
+  --output jira_figma_tests
+
+# ── 6. All inputs — best quality ──
+python qa_smart_agentv1.py \
+  --jira-ticket PROJ-123 \
+  --figma-url "https://www.figma.com/design/FILE_KEY/Name?node-id=1318-1991" \
+  --frame-ids "1318:1991" "1330:17483" "1330:21740" \
+  --business "nVent SCHROFF B2B e-commerce. Industrial enclosures." \
+  --story-id "SCHROFF-001" \
+  --output schroff_full_run
+
+# ── 7. Switch AI model ──
+# OpenAI models (needs OPENAI_API_KEY):
+python qa_smart_agentv1.py --jira-ticket PROJ-123 --model gpt-4o-mini   # cheapest
+python qa_smart_agentv1.py --jira-ticket PROJ-123 --model gpt-4o        # better
+
+# Anthropic models (needs ANTHROPIC_API_KEY):
+python qa_smart_agentv1.py --jira-ticket PROJ-123 --model claude-opus-4-5
+python qa_smart_agentv1.py --jira-ticket PROJ-123 --model claude-sonnet-4-5
+
+# ── 8. Custom output filename ──
+python qa_smart_agentv1.py \
+  --jira-ticket PROJ-123 \
+  --output "sprint_42_login_tests"
+# Generates: sprint_42_login_tests.csv + sprint_42_login_tests.md
+
+
+# ─────────────────────────────────────────────────────────────
+# OUTPUT FILES GENERATED
+# ─────────────────────────────────────────────────────────────
+
+# For every run, the agent generates:
+#
+#   {output}.csv   → QA test cases (import to Jira / TestRail / Excel)
+#   {output}.md    → Structured Figma design doc (if Figma URL provided)
+#   {output}.docx  → Word doc version of design doc (if Figma URL provided)
+#
+# CSV columns:
+#   Story ID, Test Case ID, Test Scenario, Test Case Title,
+#   Module, Priority, Severity, Preconditions, Test Steps,
+#   Test Data, Expected Result, Actual Result, Status,
+#   Environment, Browser/Device, Created By, Execution Date,
+#   Comments, Coverage Type, Source Reference, Story Summary
+
+
+# ─────────────────────────────────────────────────────────────
+# AI MODEL COST REFERENCE
+# ─────────────────────────────────────────────────────────────
+
+# Model              Provider    Cost per run (est.)   Quality
+# ─────────────────────────────────────────────────────────────
+# gpt-4o-mini        OpenAI      ~$0.003               Good  ✅ recommended
+# gpt-4o             OpenAI      ~$0.03                Better
+# claude-sonnet-4-5  Anthropic   ~$0.02                Better
+# claude-opus-4-5    Anthropic   ~$0.10                Best
+
+
+# ─────────────────────────────────────────────────────────────
+# TROUBLESHOOTING
+# ─────────────────────────────────────────────────────────────
+
+# ❌ ModuleNotFoundError: No module named 'openai'
+#    → pip install -r requirements.txt
+
+# ❌ FIGMA_TOKEN not set
+#    → export FIGMA_TOKEN="your_token" (macOS/Linux)
+#    → set FIGMA_TOKEN=your_token      (Windows CMD)
+
+# ❌ Jira 401 Unauthorized
+#    → Check JIRA_EMAIL is your Atlassian login email
+#    → Regenerate token at id.atlassian.com/manage-profile/security/api-tokens
+
+# ❌ Jira 404 Not Found
+#    → Check ticket ID format: PROJ-123 not proj123
+#    → Check JIRA_BASE_URL has no trailing slash
+
+# ❌ Figma 403 Forbidden
+#    → Your token doesn't have access to this file
+#    → Ask the Figma file owner to share it with your account
+
+# ❌ Cannot find module 'docx' (Node.js error)
+#    → cd into your project folder first
+#    → npm install docx
+
+# ❌ Python 3.9 or lower
+#    → Upgrade to Python 3.10+
+#    → Use pyenv (macOS/Linux) or python.org installer (Windows)
+
+# ❌ command not found: python (macOS/Linux)
+#    → Use python3 instead of python
+#    → Or: alias python=python3 (add to ~/.zshrc)
+
+
+# ─────────────────────────────────────────────────────────────
+# QUICK START — copy paste this entire block
+# ─────────────────────────────────────────────────────────────
+
+# macOS / Linux:
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+npm install docx
+export OPENAI_API_KEY="sk-proj-your-key-here"
+python qa_smart_agentv1.py --story "As a user I want to test this agent" --model gpt-4o-mini
+
+# Windows CMD:
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+npm install docx
+set OPENAI_API_KEY=sk-proj-your-key-here
+python qa_smart_agentv1.py --story "As a user I want to test this agent" --model gpt-4o-mini

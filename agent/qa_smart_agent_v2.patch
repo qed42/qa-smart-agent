@@ -1,0 +1,430 @@
+--- qa_smart_agentv1.py
++++ qa_smart_agentv2.py
+@@ -493,26 +493,51 @@
+     """
+     Build system + user prompt using whatever context is available.
+     Returns (system_prompt, user_prompt).
++
++    v2 quality update:
++      - Claude Skill-style testing instructions are embedded as reusable rules.
++      - Output stays backward-compatible with the existing CSV fields.
++      - Focus is compact, high-value coverage rather than many basic cases.
+     """
+     sid = story_id or (jira_story.get("id") if jira_story else "") or "QA-001"
+ 
+     system_prompt = textwrap.dedent("""
+-    You are a senior QA engineer with 10+ years experience.
+-    You apply Black Box testing, Boundary Value Analysis (BVA),
+-    Equivalence Partitioning (EP), and State Transition techniques.
+-
+-    Your goal: generate MINIMUM test cases with MAXIMUM coverage.
+-    QA should spend minutes reviewing — not hours.
+-    Every test case must earn its place.
+-
+-    Rules:
+-    - Combine EP groups — don't write one test per value
+-    - Apply BVA for every numeric or length field (min, min+1, max-1, max)
+-    - Cover state transitions: empty → filled → submitted → error → success
+-    - Test interactive UI only: inputs, buttons, dropdowns, errors, navigation
+-    - Skip static elements: headings, labels, decorative text, dividers
+-    - Generate 15-25 test cases max. Merge similar cases using EP.
+-    - Return ONLY valid JSON array, no markdown, no explanation.
++    You are a senior QA engineer with 10+ years experience and a pragmatic test-case generation skill.
++
++    PRIMARY OBJECTIVE
++    Generate compact, requirement-driven, execution-ready manual test cases with >=80/100 quality.
++    Prefer fewer high-value tests that cover multiple related checks over many small/basic tests.
++
++    CORE TESTING PRINCIPLES
++    - Test what matters: user value, business rules, integrations, data/state changes, errors, permissions, and recovery.
++    - Every requirement/AC must be covered by at least one test case.
++    - One test case may cover multiple related acceptance checks when the flow is naturally connected.
++    - Avoid duplicate/basic cases like separate tests for every label, heading, or static text.
++    - Skip static decorative UI unless it impacts compliance, navigation, accessibility, or user decision making.
++    - Use Black Box testing, Boundary Value Analysis, Equivalence Partitioning, State Transition, and risk-based prioritization.
++    - Include positive, negative, edge/error, state transition, and regression-sensitive coverage.
++    - Keep steps executable and expected results measurable.
++
++    COMPACT COVERAGE RULES
++    - Target 8-14 strong test cases for a normal story.
++    - Use 15-20 only for genuinely complex flows with many roles/states/integrations.
++    - Combine similar validation checks into one parameterized/EP test case.
++    - Do not create one test case per field/value/button unless the behavior or risk is different.
++    - Prefer business journey tests, not checklist-style noise.
++
++    REQUIRED QUALITY BAR
++    The generated set must pass this internal 80+ rubric:
++    - Requirement / AC coverage and traceability: 25
++    - Real QA judgment and risk coverage: 20
++    - Compactness with no duplicate/basic tests: 15
++    - Executable steps and measurable expected results: 15
++    - Negative / edge / state transition coverage: 15
++    - CSV/schema compliance: 10
++
++    STRICT OUTPUT RULES
++    - Return ONLY valid JSON array.
++    - No markdown, no explanation, no preamble.
++    - Use exactly the requested field names.
+     """).strip()
+ 
+     # ── Build context sections ──
+@@ -521,13 +546,13 @@
+     # Jira story section
+     if jira_story:
+         sections.append(f"""
+-JIRA STORY (real-time fetched)
++JIRA STORY / USER STORY
+ {'-'*40}
+ {format_jira_for_prompt(jira_story)}
+ """)
+     else:
+-        sections.append("""
+-JIRA STORY
++        sections.append(f"""
++JIRA STORY / USER STORY
+ {'-'*40}
+ Not provided — infer acceptance criteria from Figma design and business context.
+ """)
+@@ -540,10 +565,10 @@
+ {business_context.strip()}
+ """)
+     else:
+-        sections.append("""
++        sections.append(f"""
+ BUSINESS CONTEXT
+ {'-'*40}
+-Not provided — infer from Figma components, text labels, and screen names.
++Not provided — infer from story, Figma components, text labels, and screen names.
+ """)
+ 
+     # Figma doc section
+@@ -554,10 +579,10 @@
+ {figma_doc[:8000]}
+ """)
+     else:
+-        sections.append("""
++        sections.append(f"""
+ FIGMA DESIGN
+ {'-'*40}
+-Not provided — generate test cases based on Jira story and business context only.
++Not provided — generate test cases based on story and business context only.
+ """)
+ 
+     context = "\n".join(sections)
+@@ -572,30 +597,41 @@
+ IMPORTANT: No story or business context provided.
+ Act as a human QA analyst — read the Figma doc, infer the business domain from
+ component names and screen flow, self-generate acceptance criteria,
+-then apply BVA + EP + Black Box to generate test cases.
++then apply BVA + EP + Black Box to generate compact high-value test cases.
+ """
+     elif has_jira and not has_figma:
+         inference_note = """
+ IMPORTANT: No Figma design provided.
+-Generate test cases purely from the Jira story and acceptance criteria.
+-Cover all AC points with positive, negative, and edge case scenarios.
++Generate test cases from the story and acceptance criteria.
++Cover all AC points with compact positive, negative, edge, and state scenarios.
+ """
+     else:
+         inference_note = """
+-Use ALL provided context together for the highest quality test cases.
+-Jira AC = what to test. Figma = how the UI behaves. Business context = domain rules.
++Use ALL provided context together.
++Story/AC = what to test. Figma = how the UI behaves. Business context = domain rules.
+ """
+-
+     user_prompt = textwrap.dedent(f"""
+     {context}
+ 
+     {inference_note}
+ 
+-    Generate test cases covering:
+-    POSITIVE (+ve): Happy path, valid inputs, successful actions, correct navigation
+-    NEGATIVE (-ve): Cancel, empty/invalid fields, boundary limits, unauthorised access
+-    EDGE CASES: Max/min BVA values, special chars, double-click, back/refresh
+-    UI: Error messages, button states, dynamic updates (price, totals)
++    TASK
++    Generate a compact high-quality test suite, not a large basic checklist.
++
++    COVERAGE EXPECTATIONS
++    1. Functional happy path and key user journey.
++    2. Requirement-to-test traceability through Source Reference and Comments.
++    3. Negative and validation paths grouped using Equivalence Partitioning.
++    4. Boundary values only where limits are present or can be reasonably inferred.
++    5. State transitions such as empty → selected/filled → submitted → success/error → retry/cancel.
++    6. Permission/role checks only when the story implies role/status restrictions.
++    7. Regression-sensitive checks for existing behavior that could break.
++
++    DEDUPLICATION RULES
++    - Do not create separate tests for each static label, heading, or visual-only element.
++    - Merge related button visibility/action checks into a single scenario when they share the same precondition.
++    - Merge invalid input cases into one EP/BVA scenario where possible.
++    - Each test case must explain why it matters through scenario, expected result, and comments.
+ 
+     Return ONLY a valid JSON array. Each object MUST have EXACTLY these fields:
+     {{
+@@ -608,7 +644,7 @@
+       "Severity":        "Critical | Major | Minor | Trivial",
+       "Preconditions":   "what must be true before test",
+       "Test Steps":      "1. step one\\n2. step two\\n3. step three",
+-      "Test Data":       "specific test data e.g. SKU=ABC123, qty=1000",
++      "Test Data":       "specific test data, EP set, or BVA values",
+       "Expected Result": "exact expected outcome",
+       "Actual Result":   "",
+       "Status":          "Not Executed",
+@@ -616,16 +652,22 @@
+       "Browser/Device":  "Chrome / Desktop",
+       "Created By":      "QA Agent",
+       "Execution Date":  "",
+-      "Comments":        "",
+-      "Coverage Type":   "Functional | UI | Negative | Edge Case",
+-      "Source Reference":"{sid} + Figma",
++      "Comments":        "Req/AC coverage note + why this test matters",
++      "Coverage Type":   "Functional | UI | Negative | Edge Case | State Transition | Regression",
++      "Source Reference":"{sid} | AC/REQ references covered",
+       "Story Summary":   "one-line summary of what this feature does"
+     }}
+ 
+-    Return ONLY the JSON array. No markdown. No explanation. No preamble.
++    Final self-check before returning:
++    - Is every AC/requirement covered?
++    - Are basic/static-only tests removed?
++    - Are similar cases merged?
++    - Would a 10+ years QA lead accept this as >=80/100?
++    - Is the response valid JSON array only?
+     """).strip()
+ 
+     return system_prompt, user_prompt
++
+ 
+ 
+ # ─────────────────────────────────────────────────────────────
+@@ -773,6 +815,200 @@
+     for k, v in sorted(coverage.items()):
+         print(f"    {k:<20} {v}")
+     print("─" * 55)
++
++
++
++# ─────────────────────────────────────────────────────────────
++# QUALITY GATE — local 80% acceptance evaluator + retry guidance
++# ─────────────────────────────────────────────────────────────
++
++def _non_empty(tc: dict, field: str) -> bool:
++    return bool(str(tc.get(field, "")).strip())
++
++
++def _contains_any(text: str, words: list[str]) -> bool:
++    low = text.lower()
++    return any(w in low for w in words)
++
++
++def evaluate_test_cases(test_cases: list, source_text: str = "") -> dict:
++    """
++    Lightweight deterministic evaluator to avoid obvious low-quality output.
++    It does not replace human QA review, but it catches common manager feedback:
++      - too many basic/static cases
++      - missing negative/edge/state coverage
++      - weak expected results
++      - missing traceability
++      - invalid schema gaps
++
++    Returns: {score, passed, issues, breakdown}
++    """
++    issues = []
++    breakdown = {}
++
++    if not isinstance(test_cases, list) or not test_cases:
++        return {
++            "score": 0,
++            "passed": False,
++            "issues": ["No test cases generated."],
++            "breakdown": {}
++        }
++
++    count = len(test_cases)
++    all_text = "\n".join(json.dumps(tc, ensure_ascii=False) for tc in test_cases)
++
++    # 1) Schema + executability — 20
++    required_fields = CSV_FIELDS
++    missing_field_hits = 0
++    weak_steps = 0
++    weak_expected = 0
++    for tc in test_cases:
++        for field in required_fields:
++            if field not in tc:
++                missing_field_hits += 1
++        steps = str(tc.get("Test Steps", ""))
++        expected = str(tc.get("Expected Result", ""))
++        if steps.count("\n") < 1 and not re.search(r"\b1\.", steps):
++            weak_steps += 1
++        if len(expected.strip()) < 25 or _contains_any(expected, ["works fine", "as expected", "properly"]):
++            weak_expected += 1
++
++    schema_score = 20
++    schema_score -= min(8, missing_field_hits)
++    schema_score -= min(6, weak_steps * 2)
++    schema_score -= min(6, weak_expected * 2)
++    breakdown["schema_executability"] = max(0, schema_score)
++    if missing_field_hits:
++        issues.append(f"{missing_field_hits} required field occurrences are missing.")
++    if weak_steps:
++        issues.append(f"{weak_steps} test case(s) have weak/non-stepwise test steps.")
++    if weak_expected:
++        issues.append(f"{weak_expected} test case(s) have weak expected results.")
++
++    # 2) Coverage mix — 25
++    coverage_values = [str(tc.get("Coverage Type", "")).lower() for tc in test_cases]
++    titles_scenarios = " ".join(
++        f"{tc.get('Test Case Title','')} {tc.get('Test Scenario','')} {tc.get('Test Steps','')} {tc.get('Expected Result','')}"
++        for tc in test_cases
++    ).lower()
++
++    has_positive = _contains_any(titles_scenarios, ["valid", "success", "happy", "successful", "correct"])
++    has_negative = _contains_any(titles_scenarios, ["invalid", "empty", "unauthor", "permission", "error", "fail", "cancel"])
++    has_edge = _contains_any(titles_scenarios, ["boundary", "min", "max", "limit", "special", "double-click", "refresh", "back"])
++    has_state = _contains_any(titles_scenarios, ["state", "status", "transition", "retry", "completed", "failed", "pending"])
++    has_regression = _contains_any(titles_scenarios, ["regression", "existing", "should not affect", "unchanged"])
++
++    coverage_score = 0
++    coverage_score += 6 if has_positive else 0
++    coverage_score += 6 if has_negative else 0
++    coverage_score += 5 if has_edge else 0
++    coverage_score += 5 if has_state else 0
++    coverage_score += 3 if has_regression else 0
++    breakdown["coverage_mix"] = coverage_score
++    if not has_negative:
++        issues.append("Negative/error coverage is missing or too weak.")
++    if not has_edge:
++        issues.append("Edge/BVA coverage is missing or too weak.")
++    if not has_state:
++        issues.append("State-transition/status coverage is missing or too weak.")
++
++    # 3) Compactness and duplicate avoidance — 20
++    compact_score = 20
++    if count > 20:
++        compact_score -= 8
++        issues.append(f"Too many test cases ({count}); compact target is 8-14 for normal stories.")
++    elif count > 14:
++        compact_score -= 3
++
++    normalized_titles = [
++        re.sub(r"[^a-z0-9]+", " ", str(tc.get("Test Case Title", "")).lower()).strip()
++        for tc in test_cases
++    ]
++    duplicate_count = count - len(set(normalized_titles))
++    if duplicate_count:
++        compact_score -= min(8, duplicate_count * 3)
++        issues.append(f"{duplicate_count} duplicate/similar title(s) detected.")
++
++    static_noise = sum(
++        1 for tc in test_cases
++        if _contains_any(
++            f"{tc.get('Test Case Title','')} {tc.get('Test Scenario','')}",
++            ["heading", "label", "static text", "banner text", "decorative"]
++        )
++    )
++    if static_noise:
++        compact_score -= min(6, static_noise * 2)
++        issues.append(f"{static_noise} static/basic UI test(s) should be merged or removed.")
++
++    breakdown["compactness"] = max(0, compact_score)
++
++    # 4) Traceability / comments — 20
++    trace_score = 20
++    weak_trace = sum(
++        1 for tc in test_cases
++        if not _non_empty(tc, "Source Reference") or not _non_empty(tc, "Comments")
++    )
++    if weak_trace:
++        trace_score -= min(12, weak_trace * 2)
++        issues.append(f"{weak_trace} test case(s) have weak Source Reference or Comments traceability.")
++
++    # Basic AC keyword coverage signal — not strict NLP, just a helpful heuristic
++    source_low = source_text.lower()
++    ac_keywords = set(re.findall(r"\b[a-z][a-z0-9_-]{3,}\b", source_low))
++    stop = {
++        "this","that","with","from","user","story","acceptance","criteria","should","when",
++        "then","given","have","will","must","only","provided","figma","business","context"
++    }
++    ac_keywords = {w for w in ac_keywords if w not in stop}
++    if ac_keywords:
++        covered = sum(1 for w in ac_keywords if w in all_text.lower())
++        keyword_ratio = covered / max(1, len(ac_keywords))
++        if keyword_ratio < 0.35:
++            trace_score -= 5
++            issues.append("Low requirement keyword coverage signal; generated tests may not map well to source story/AC.")
++
++    breakdown["traceability"] = max(0, trace_score)
++
++    # 5) QA judgment / risk — 15
++    risk_words = ["permission", "role", "status", "bulk", "individual", "data", "audit", "retry", "recover", "refresh", "duplicate", "race", "partial"]
++    qa_score = 15 if _contains_any(all_text, risk_words) else 9
++    if qa_score < 15:
++        issues.append("Risk-based QA judgment is weak; add role/status/data/recovery risks where relevant.")
++    breakdown["qa_judgment"] = qa_score
++
++    score = sum(breakdown.values())
++    return {
++        "score": int(score),
++        "passed": score >= 80,
++        "issues": issues,
++        "breakdown": breakdown
++    }
++
++
++def build_quality_revision_prompt(original_user_prompt: str, test_cases: list, evaluation: dict) -> str:
++    """Ask the same model to revise output only when local quality gate is below 80."""
++    return textwrap.dedent(f"""
++    The previous test suite scored {evaluation.get('score', 0)}/100 and must be improved to >=80/100.
++
++    Issues to fix:
++    {json.dumps(evaluation.get('issues', []), indent=2)}
++
++    Previous test cases:
++    {json.dumps(test_cases, indent=2, ensure_ascii=False)}
++
++    Original task/context:
++    {original_user_prompt}
++
++    Revise the test suite using these rules:
++    - Keep output as ONLY valid JSON array.
++    - Keep the same CSV field schema exactly.
++    - Improve requirement/AC traceability in Source Reference and Comments.
++    - Merge duplicate/basic/static cases.
++    - Keep normal story output compact, ideally 8-14 high-value test cases.
++    - Ensure positive, negative, edge/BVA, state transition, and regression-sensitive coverage.
++    - Make steps executable and expected results measurable.
++    """).strip()
++
+ 
+ 
+ # ─────────────────────────────────────────────────────────────
+@@ -905,6 +1141,26 @@
+     test_cases = parse_ai_response(raw)
+     print(f"   ✅ {len(test_cases)} test cases generated")
+ 
++    # ── Local quality gate: target >=80, retry once with focused revision if needed ──
++    source_for_eval = "\n".join([user_prompt, figma_doc or "", business_context or ""])
++    quality = evaluate_test_cases(test_cases, source_for_eval)
++    print(f"   🧪 Quality score: {quality['score']}/100")
++    if not quality["passed"]:
++        print("   ⚠️  Below 80 — asking model for compact quality revision...")
++        revision_prompt = build_quality_revision_prompt(user_prompt, test_cases, quality)
++        raw = call_ai(system_prompt, revision_prompt, model)
++        revised_cases = parse_ai_response(raw)
++        revised_quality = evaluate_test_cases(revised_cases, source_for_eval)
++        print(f"   🧪 Revised quality score: {revised_quality['score']}/100")
++        if revised_quality["score"] >= quality["score"]:
++            test_cases = revised_cases
++            quality = revised_quality
++
++    if not quality["passed"]:
++        print("   ⚠️  Final quality still below 80 by local heuristic. Review recommended.")
++        for issue in quality.get("issues", [])[:5]:
++            print(f"      - {issue}")
++
+     # ── Save CSV ──
+     print(f"\n💾 Saving CSV...")
+     save_to_csv(test_cases, csv_path)

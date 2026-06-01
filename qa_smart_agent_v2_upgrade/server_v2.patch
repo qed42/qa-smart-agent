@@ -1,0 +1,356 @@
+--- server.js
++++ server_v2.js
+@@ -262,11 +262,42 @@
+ function buildPrompt(story, jiraData, businessContext, figmaDoc, storyId) {
+     const sid = storyId || (jiraData && jiraData.id) || "QA-001";
+ 
+-    const systemPrompt = `You are a senior QA engineer with 10+ years experience.
+-Apply Black Box testing, BVA, Equivalence Partitioning, State Transition techniques.
+-Generate MINIMUM test cases with MAXIMUM coverage (15-25 max).
+-Test interactive UI only — skip static headings/labels/decorations.
+-Return ONLY valid JSON array. No markdown. No explanation.`;
++    const systemPrompt = `You are a senior QA engineer with 10+ years experience and a pragmatic test-case generation skill.
++
++PRIMARY OBJECTIVE
++Generate compact, requirement-driven, execution-ready manual test cases with >=80/100 quality.
++Prefer fewer high-value tests that cover multiple related checks over many small/basic tests.
++
++CORE TESTING PRINCIPLES
++- Test what matters: user value, business rules, integrations, data/state changes, errors, permissions, and recovery.
++- Every requirement/AC must be covered by at least one test case.
++- One test case may cover multiple related acceptance checks when the flow is naturally connected.
++- Avoid duplicate/basic cases like separate tests for every label, heading, or static text.
++- Skip static decorative UI unless it impacts compliance, navigation, accessibility, or user decision making.
++- Use Black Box testing, Boundary Value Analysis, Equivalence Partitioning, State Transition, and risk-based prioritization.
++- Include positive, negative, edge/error, state transition, and regression-sensitive coverage.
++- Keep steps executable and expected results measurable.
++
++COMPACT COVERAGE RULES
++- Target 8-14 strong test cases for a normal story.
++- Use 15-20 only for genuinely complex flows with many roles/states/integrations.
++- Combine similar validation checks into one parameterized/EP test case.
++- Do not create one test case per field/value/button unless the behavior or risk is different.
++- Prefer business journey tests, not checklist-style noise.
++
++REQUIRED QUALITY BAR
++The generated set must pass this internal 80+ rubric:
++- Requirement / AC coverage and traceability: 25
++- Real QA judgment and risk coverage: 20
++- Compactness with no duplicate/basic tests: 15
++- Executable steps and measurable expected results: 15
++- Negative / edge / state transition coverage: 15
++- CSV/schema compliance: 10
++
++STRICT OUTPUT RULES
++- Return ONLY valid JSON array.
++- No markdown, no explanation, no preamble.
++- Use exactly the requested field names.`;
+ 
+     const hasStory   = story && story.trim();
+     const hasJira    = jiraData && jiraData.summary;
+@@ -303,11 +334,23 @@
+     }
+ 
+     const userPrompt = `${context}
+-Generate test cases covering:
+-- POSITIVE (+ve): Happy path, valid inputs, successful actions
+-- NEGATIVE (-ve): Empty/invalid fields, cancel, boundary limits, unauthorised
+-- EDGE CASES: Max/min BVA, special chars, double-click, back/refresh
+-- UI: Error messages, button states, dynamic updates
++TASK
++Generate a compact high-quality test suite, not a large basic checklist.
++
++COVERAGE EXPECTATIONS
++1. Functional happy path and key user journey.
++2. Requirement-to-test traceability through Source Reference and Comments.
++3. Negative and validation paths grouped using Equivalence Partitioning.
++4. Boundary values only where limits are present or can be reasonably inferred.
++5. State transitions such as empty → selected/filled → submitted → success/error → retry/cancel.
++6. Permission/role checks only when the story implies role/status restrictions.
++7. Regression-sensitive checks for existing behavior that could break.
++
++DEDUPLICATION RULES
++- Do not create separate tests for each static label, heading, or visual-only element.
++- Merge related button visibility/action checks into a single scenario when they share the same precondition.
++- Merge invalid input cases into one EP/BVA scenario where possible.
++- Each test case must explain why it matters through scenario, expected result, and comments.
+ 
+ Return ONLY a valid JSON array. Each object MUST have EXACTLY:
+ {
+@@ -320,7 +363,7 @@
+   "Severity":        "Critical | Major | Minor | Trivial",
+   "Preconditions":   "what must be true",
+   "Test Steps":      "1. step\\n2. step\\n3. step",
+-  "Test Data":       "specific test data",
++  "Test Data":       "specific test data, EP set, or BVA values",
+   "Expected Result": "exact expected outcome",
+   "Actual Result":   "",
+   "Status":          "Not Executed",
+@@ -328,13 +371,178 @@
+   "Browser/Device":  "Chrome / Desktop",
+   "Created By":      "QA Agent",
+   "Execution Date":  "",
+-  "Comments":        "",
+-  "Coverage Type":   "Functional | UI | Negative | Edge Case",
+-  "Source Reference":"${sid}",
++  "Comments":        "Req/AC coverage note + why this test matters",
++  "Coverage Type":   "Functional | UI | Negative | Edge Case | State Transition | Regression",
++  "Source Reference":"${sid} | AC/REQ references covered",
+   "Story Summary":   "one line summary"
+-}`;
++}
++
++Final self-check before returning:
++- Is every AC/requirement covered?
++- Are basic/static-only tests removed?
++- Are similar cases merged?
++- Would a 10+ years QA lead accept this as >=80/100?
++- Is the response valid JSON array only?`;
+ 
+     return { systemPrompt, userPrompt };
++}
++
++
++
++// ─────────────────────────────────────────────────────────────
++// QUALITY GATE — local 80% acceptance evaluator + retry guidance
++// ─────────────────────────────────────────────────────────────
++
++function containsAny(text = "", words = []) {
++    const low = String(text).toLowerCase();
++    return words.some(w => low.includes(w));
++}
++
++function evaluateTestCases(testCases, sourceText = "") {
++    const issues = [];
++    const breakdown = {};
++
++    if (!Array.isArray(testCases) || testCases.length === 0) {
++        return { score: 0, passed: false, issues: ["No test cases generated."], breakdown: {} };
++    }
++
++    const count = testCases.length;
++    const allText = testCases.map(tc => JSON.stringify(tc)).join("\n");
++
++    // 1) Schema + executability — 20
++    let missingFieldHits = 0;
++    let weakSteps = 0;
++    let weakExpected = 0;
++
++    for (const tc of testCases) {
++        for (const field of CSV_FIELDS) {
++            if (!(field in tc)) missingFieldHits += 1;
++        }
++
++        const steps = String(tc["Test Steps"] || "");
++        const expected = String(tc["Expected Result"] || "");
++
++        if ((steps.match(/\n/g) || []).length < 1 && !/\b1\./.test(steps)) weakSteps += 1;
++        if (expected.trim().length < 25 || containsAny(expected, ["works fine", "as expected", "properly"])) weakExpected += 1;
++    }
++
++    let schemaScore = 20;
++    schemaScore -= Math.min(8, missingFieldHits);
++    schemaScore -= Math.min(6, weakSteps * 2);
++    schemaScore -= Math.min(6, weakExpected * 2);
++    breakdown.schema_executability = Math.max(0, schemaScore);
++
++    if (missingFieldHits) issues.push(`${missingFieldHits} required field occurrences are missing.`);
++    if (weakSteps) issues.push(`${weakSteps} test case(s) have weak/non-stepwise test steps.`);
++    if (weakExpected) issues.push(`${weakExpected} test case(s) have weak expected results.`);
++
++    // 2) Coverage mix — 25
++    const titleScenarioText = testCases.map(tc =>
++        `${tc["Test Case Title"] || ""} ${tc["Test Scenario"] || ""} ${tc["Test Steps"] || ""} ${tc["Expected Result"] || ""}`
++    ).join(" ").toLowerCase();
++
++    const hasPositive = containsAny(titleScenarioText, ["valid", "success", "happy", "successful", "correct"]);
++    const hasNegative = containsAny(titleScenarioText, ["invalid", "empty", "unauthor", "permission", "error", "fail", "cancel"]);
++    const hasEdge = containsAny(titleScenarioText, ["boundary", "min", "max", "limit", "special", "double-click", "refresh", "back"]);
++    const hasState = containsAny(titleScenarioText, ["state", "status", "transition", "retry", "completed", "failed", "pending"]);
++    const hasRegression = containsAny(titleScenarioText, ["regression", "existing", "should not affect", "unchanged"]);
++
++    let coverageScore = 0;
++    coverageScore += hasPositive ? 6 : 0;
++    coverageScore += hasNegative ? 6 : 0;
++    coverageScore += hasEdge ? 5 : 0;
++    coverageScore += hasState ? 5 : 0;
++    coverageScore += hasRegression ? 3 : 0;
++    breakdown.coverage_mix = coverageScore;
++
++    if (!hasNegative) issues.push("Negative/error coverage is missing or too weak.");
++    if (!hasEdge) issues.push("Edge/BVA coverage is missing or too weak.");
++    if (!hasState) issues.push("State-transition/status coverage is missing or too weak.");
++
++    // 3) Compactness and duplicate avoidance — 20
++    let compactScore = 20;
++    if (count > 20) {
++        compactScore -= 8;
++        issues.push(`Too many test cases (${count}); compact target is 8-14 for normal stories.`);
++    } else if (count > 14) {
++        compactScore -= 3;
++    }
++
++    const normalizedTitles = testCases.map(tc =>
++        String(tc["Test Case Title"] || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
++    );
++    const duplicateCount = count - new Set(normalizedTitles).size;
++    if (duplicateCount) {
++        compactScore -= Math.min(8, duplicateCount * 3);
++        issues.push(`${duplicateCount} duplicate/similar title(s) detected.`);
++    }
++
++    const staticNoise = testCases.filter(tc =>
++        containsAny(`${tc["Test Case Title"] || ""} ${tc["Test Scenario"] || ""}`, ["heading", "label", "static text", "banner text", "decorative"])
++    ).length;
++    if (staticNoise) {
++        compactScore -= Math.min(6, staticNoise * 2);
++        issues.push(`${staticNoise} static/basic UI test(s) should be merged or removed.`);
++    }
++
++    breakdown.compactness = Math.max(0, compactScore);
++
++    // 4) Traceability / comments — 20
++    let traceScore = 20;
++    const weakTrace = testCases.filter(tc =>
++        !String(tc["Source Reference"] || "").trim() || !String(tc["Comments"] || "").trim()
++    ).length;
++    if (weakTrace) {
++        traceScore -= Math.min(12, weakTrace * 2);
++        issues.push(`${weakTrace} test case(s) have weak Source Reference or Comments traceability.`);
++    }
++
++    const sourceWords = new Set(
++        String(sourceText).toLowerCase().match(/\b[a-z][a-z0-9_-]{3,}\b/g) || []
++    );
++    const stop = new Set(["this","that","with","from","user","story","acceptance","criteria","should","when","then","given","have","will","must","only","provided","figma","business","context"]);
++    const acKeywords = [...sourceWords].filter(w => !stop.has(w));
++    if (acKeywords.length) {
++        const covered = acKeywords.filter(w => allText.toLowerCase().includes(w)).length;
++        const keywordRatio = covered / Math.max(1, acKeywords.length);
++        if (keywordRatio < 0.35) {
++            traceScore -= 5;
++            issues.push("Low requirement keyword coverage signal; generated tests may not map well to source story/AC.");
++        }
++    }
++
++    breakdown.traceability = Math.max(0, traceScore);
++
++    // 5) QA judgment / risk — 15
++    const riskWords = ["permission", "role", "status", "bulk", "individual", "data", "audit", "retry", "recover", "refresh", "duplicate", "race", "partial"];
++    const qaScore = containsAny(allText, riskWords) ? 15 : 9;
++    breakdown.qa_judgment = qaScore;
++    if (qaScore < 15) issues.push("Risk-based QA judgment is weak; add role/status/data/recovery risks where relevant.");
++
++    const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
++    return { score: Math.trunc(score), passed: score >= 80, issues, breakdown };
++}
++
++function buildQualityRevisionPrompt(originalUserPrompt, testCases, evaluation) {
++    return `The previous test suite scored ${evaluation.score || 0}/100 and must be improved to >=80/100.
++
++Issues to fix:
++${JSON.stringify(evaluation.issues || [], null, 2)}
++
++Previous test cases:
++${JSON.stringify(testCases, null, 2)}
++
++Original task/context:
++${originalUserPrompt}
++
++Revise the test suite using these rules:
++- Keep output as ONLY valid JSON array.
++- Keep the same CSV field schema exactly.
++- Improve requirement/AC traceability in Source Reference and Comments.
++- Merge duplicate/basic/static cases.
++- Keep normal story output compact, ideally 8-14 high-value test cases.
++- Ensure positive, negative, edge/BVA, state transition, and regression-sensitive coverage.
++- Make steps executable and expected results measurable.`;
+ }
+ 
+ 
+@@ -488,26 +696,53 @@
+         // ── Call AI ──
+         console.log(`  Calling ${model}...`);
+         const aiResult = await callAI(systemPrompt, userPrompt, model);
+-        const cost     = estimateCost(aiResult.inputTokens, aiResult.outputTokens, model);
+-
+-        console.log(`  ✅ AI done | tokens=${aiResult.inputTokens}+${aiResult.outputTokens} | cost=$${cost.toFixed(4)}`);
++
++        console.log(`  ✅ AI done | tokens=${aiResult.inputTokens}+${aiResult.outputTokens}`);
+ 
+         // ── Parse test cases ──
+-        const testCases = parseAIResponse(aiResult.text);
++        let testCases = parseAIResponse(aiResult.text);
+         console.log(`  ✅ ${testCases.length} test cases generated`);
+ 
++        // ── Local quality gate: target >=80, retry once with focused revision if needed ──
++        const sourceForEval = [userPrompt, figmaDoc || "", business_context || "", story || ""].join("\n");
++        let quality = evaluateTestCases(testCases, sourceForEval);
++        console.log(`  🧪 Quality score=${quality.score}/100`);
++
++        let finalAiResult = aiResult;
++        if (!quality.passed) {
++            console.log(`  ⚠️  Below 80 — asking model for compact quality revision...`);
++            const revisionPrompt = buildQualityRevisionPrompt(userPrompt, testCases, quality);
++            const revisedAiResult = await callAI(systemPrompt, revisionPrompt, model);
++            const revisedCases = parseAIResponse(revisedAiResult.text);
++            const revisedQuality = evaluateTestCases(revisedCases, sourceForEval);
++            console.log(`  🧪 Revised quality score=${revisedQuality.score}/100`);
++
++            if (revisedQuality.score >= quality.score) {
++                testCases = revisedCases;
++                quality = revisedQuality;
++                finalAiResult = {
++                    ...revisedAiResult,
++                    inputTokens: aiResult.inputTokens + revisedAiResult.inputTokens,
++                    outputTokens: aiResult.outputTokens + revisedAiResult.outputTokens,
++                };
++            }
++        }
++
+         // ── Log usage ──
++        const cost = estimateCost(finalAiResult.inputTokens, finalAiResult.outputTokens, model);
+         const usageEntry = {
+             timestamp    : new Date().toISOString(),
+             user         : userEmail,
+             model,
+             provider     : aiResult.provider,
+-            input_tokens : aiResult.inputTokens,
+-            output_tokens: aiResult.outputTokens,
+-            total_tokens : aiResult.inputTokens + aiResult.outputTokens,
++            input_tokens : finalAiResult.inputTokens,
++            output_tokens: finalAiResult.outputTokens,
++            total_tokens : finalAiResult.inputTokens + finalAiResult.outputTokens,
+             cost_usd     : cost.toFixed(6),
+             story_id     : sid,
+             test_count   : testCases.length,
++            quality_score: quality.score,
++            quality_passed: quality.passed,
+         };
+         saveUsage(usageEntry);
+ 
+@@ -519,6 +754,7 @@
+             res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+             res.setHeader("X-Test-Count", testCases.length);
+             res.setHeader("X-Cost-USD",   cost.toFixed(6));
++            res.setHeader("X-Quality-Score", quality.score);
+             return res.send(csv);
+         }
+ 
+@@ -528,6 +764,7 @@
+             res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+             res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+             res.setHeader("X-Test-Count", testCases.length);
++            res.setHeader("X-Quality-Score", quality.score);
+             return res.send(buffer);
+         }
+ 
+@@ -538,6 +775,7 @@
+             test_cases : testCases,
+             csv        : buildCSV(testCases),
+             usage      : usageEntry,
++            quality    : quality,
+         });
+ 
+     } catch (err) {
